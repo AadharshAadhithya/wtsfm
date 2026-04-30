@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tsfm-evalharness"
+version = "0.1.0"
+description = "Unified embedding extraction harness for Time Series Foundation Models"
+requires-python = ">=3.10"
+
+dependencies = [
+    "torch>=2.2",
+    "transformers>=4.40",
+    "huggingface_hub>=0.22",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+patchtst  = ["transformers>=4.40"]
+chronos2  = ["chronos-forecasting>=2.0"]
+timesfm   = ["transformers>=4.52"]
+sundial   = ["transformers>=4.40"]
+moirai    = ["uni2ts"]
+tirex     = ["tirex-ts"]
+toto      = []  # install from git; see docs
+
+all = [
+    "chronos-forecasting>=2.0",
+    "uni2ts",
+    "tirex-ts",
+    "transformers>=4.52",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["harness*"]
