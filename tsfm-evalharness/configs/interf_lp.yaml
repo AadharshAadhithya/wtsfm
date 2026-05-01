@@ -1,0 +1,33 @@
+# Interference classification — linear probe
+# Encoder is fully frozen; only the linear head trains.
+# This is the safest mode with small datasets.
+
+task: interf
+mode: lp
+model: timesfm          # chronos2 / timesfm / patchtst / sundial / timer_s1 / moirai2 / tirex / toto
+checkpoint: null        # null = use model default checkpoint
+
+# --- data ---
+train_data: /ssd1/aa99435/data/wireless-tsfm/preprocessed/icarus.h5
+val_data: null          # null = carve val_split from train_data
+val_split: 0.2
+seed: 0
+
+# --- model ---
+layer_idx: -1           # which hidden layer to pool; -1 = final layer
+
+# --- training ---
+epochs: 35
+batch_size: 256
+accum_steps: 2          # effective batch = batch_size * accum_steps = 512
+blr: 1.0e-3             # base LR; effective LR = blr * effective_batch / 256
+min_lr: 1.0e-6
+weight_decay: 0.05
+warmup_epochs: 5.0
+max_grad_norm: null     # null = no clipping
+smoothing: 0.02         # label smoothing
+
+# --- output ---
+output_dir: tsfm_runs
+num_workers: 4
+device: cuda

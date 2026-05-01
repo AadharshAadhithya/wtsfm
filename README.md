@@ -169,10 +169,16 @@ python run_tsfm_probe.py \
 python run_tsfm_probe.py \
     --task interf \
     --train-data data/preprocessed/icarus.h5 \
-    --model timesfm \
-    --mode lora \
-    --lora-rank 32 --lora-alpha 64 \
-    --checkpoint google/timesfm-2.0-500m-pytorch
+    --model toto \
+    --mode lp \
+    --checkpoint Datadog/Toto-2.0-22m
+```
+
+Optional for Toto:
+
+```bash
+# Override Toto default last-patch pooling with mean-pooling.
+python run_tsfm_probe.py ... --model toto --pool-avg
 ```
 
 ---
@@ -222,12 +228,17 @@ Every wrapper returns an `EmbeddingOutput`:
 @dataclass
 class EmbeddingOutput:
     embeddings: torch.Tensor   # (B, n_tokens, D)  — full token sequence
-    pooled:     torch.Tensor   # (B, D)             — mean-pooled over tokens
+    pooled:     torch.Tensor   # (B, P)             — pooled feature vector (strategy-dependent)
     layer_idx:  int            # which layer was extracted
     meta:       dict           # model-specific info (n_vars, n_patches, …)
 ```
 
 `pooled` is passed directly to the linear classification head: `head(out.pooled) → (B, num_classes)`.
+
+For most wrappers, `pooled` is mean-pooled over tokens. For `toto`, the default is
+**last-patch pooling** (causal summary token from each variate, concatenated), which is
+typically more discriminative than global averaging. You can opt into averaging with
+`--pool-avg`.
 
 Token counts and embedding dimensions per model (approximate, depends on `T` and checkpoint):
 
@@ -255,7 +266,7 @@ The actual `D` for the loaded run is printed at startup:
 | **Chronos-2** | Native: I and Q passed as `group_ids`-linked variates; encoder mixes them via group attention before pooling |
 | **PatchTST** | Native: `(B, T, 2)` → `(B, 2, n_patches, D)`; I and Q patches concatenated into token sequence then mean-pooled |
 | **TimesFM** | Channel-independent: flattened to `(2B, T)`, embeddings reshaped back and mean-pooled |
-| **TOTO-2** | Native variate-attention: handles `(B, T, 2)` directly |
+| **TOTO-2** | Native variate-attention: handles `(B, T, 2)` directly; defaults to last-patch pooling (use `--pool-avg` to mean-pool) |
 | **Sundial / Timer / MOIRAI / TiRex** | Univariate-only internally; mean-pool across I/Q run separately if needed |
 
 ---

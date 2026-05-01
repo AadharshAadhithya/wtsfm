@@ -10,7 +10,8 @@ class Icarus(IQDataset):
 
     def __init__(self, h5_path: str | Path, return_meta: bool = False):
         self.return_meta = bool(return_meta)
-        super().__init__(h5_path, sample_key="sample", label_key="label", meta_keys=("band", "fs", "source_file"))
+        meta_keys = ("band", "fs", "source_file") if return_meta else None
+        super().__init__(h5_path, sample_key="sample", label_key="label", meta_keys=meta_keys)
 
     def __getitem__(self, idx: int):
         if not self.return_meta:

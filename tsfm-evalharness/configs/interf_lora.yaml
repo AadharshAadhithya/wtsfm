@@ -1,0 +1,46 @@
+# Interference classification — LoRA fine-tune
+# LoRA adapters on Q/V projections; rest of backbone frozen.
+# LoRA params are treated as encoder_params → get lr * 0.1 in the optimizer.
+#
+# LR budget with these settings:
+#   eff_batch = 256 * 2 = 512
+#   lr        = 3e-4 * 512/256 = 6e-4   (head)
+#   LoRA lr   = 6e-4 * 0.1    = 6e-5   (adapters)
+#
+# With only 2000 samples, rank=4 keeps the parameter count tiny
+# (~4*1280*2 * 50 layers = 512K new params) and avoids overfitting.
+
+task: interf
+mode: lora
+model: timesfm
+checkpoint: null
+
+# --- data ---
+train_data: /ssd1/aa99435/data/wireless-tsfm/preprocessed/icarus.h5
+val_data: null
+val_split: 0.2
+seed: 0
+
+# --- model ---
+layer_idx: -1
+
+# --- LoRA ---
+lora_rank: 4              # small rank for small dataset (2000 samples)
+lora_alpha: 8.0           # alpha/rank = 2 → effective scale = 1.0
+lora_dropout: 0.1         # regularisation to combat overfitting
+
+# --- training ---
+epochs: 50
+batch_size: 256
+accum_steps: 2
+blr: 3.0e-4               # slightly higher than ft2; LoRA has fewer params to destabilise
+min_lr: 1.0e-7
+weight_decay: 0.05
+warmup_epochs: 8.0
+max_grad_norm: 1.0
+smoothing: 0.02
+
+# --- output ---
+output_dir: tsfm_runs
+num_workers: 4
+device: cuda

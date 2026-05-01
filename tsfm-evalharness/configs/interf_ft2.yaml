@@ -1,0 +1,38 @@
+# Interference classification — partial fine-tune (ft2)
+# First half of transformer blocks frozen; second half + head trainable.
+# Encoder params get lr * 0.1 (hardcoded in train_and_evaluate).
+#
+# LR budget with these settings:
+#   eff_batch = 256 * 2 = 512
+#   lr        = 1e-4 * 512/256 = 2e-4   (head)
+#   enc lr    = 2e-4 * 0.1    = 2e-5   (backbone second half)
+
+task: interf
+mode: ft2
+model: timesfm
+checkpoint: null
+
+# --- data ---
+train_data: /ssd1/aa99435/data/wireless-tsfm/preprocessed/icarus.h5
+val_data: null
+val_split: 0.2
+seed: 0
+
+# --- model ---
+layer_idx: -1
+
+# --- training ---
+epochs: 50                # more epochs to compensate for gentler LR
+batch_size: 256
+accum_steps: 2            # eff_batch = 512
+blr: 1.0e-4               # 10x lower than LP; avoids divergence in first epoch
+min_lr: 1.0e-7
+weight_decay: 0.05
+warmup_epochs: 10.0       # slow ramp — critical for backbone stability
+max_grad_norm: 1.0        # gradient clipping — essential for partial fine-tuning
+smoothing: 0.02
+
+# --- output ---
+output_dir: tsfm_runs
+num_workers: 4
+device: cuda

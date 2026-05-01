@@ -69,6 +69,21 @@ class IQDataset(Dataset):
             meta[key] = _decode(val)
         return sample, label, meta
 
+    def __getstate__(self):
+        # Close the h5 handle before pickling so multiprocessing workers can spawn.
+        # The handle will be re-opened lazily on first __getitem__ in the worker.
+        state = self.__dict__.copy()
+        if state["_h5"] is not None:
+            try:
+                state["_h5"].close()
+            except Exception:
+                pass
+            state["_h5"] = None
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+
     def __del__(self):
         if self._h5 is not None:
             try:
@@ -130,6 +145,19 @@ class ImageDataset(Dataset):
             val = h5[key][idx]
             meta[key] = _decode(val)
         return sample, label, meta
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        if state["_h5"] is not None:
+            try:
+                state["_h5"].close()
+            except Exception:
+                pass
+            state["_h5"] = None
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
 
     def __del__(self):
         if self._h5 is not None:

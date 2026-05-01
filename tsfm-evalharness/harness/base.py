@@ -58,6 +58,15 @@ class TSFMWrapper(ABC):
         ...
 
     @property
+    def nn_module(self) -> torch.nn.Module:
+        """Return the underlying nn.Module for parameter iteration/freezing.
+
+        Wrappers whose _load_model() returns a non-Module pipeline object
+        (e.g. Chronos2Pipeline) should override this to return the inner module.
+        """
+        return self.model
+
+    @property
     def num_layers(self) -> Optional[int]:
         return None
 

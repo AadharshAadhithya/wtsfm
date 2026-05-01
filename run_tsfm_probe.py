@@ -73,43 +73,142 @@ ACCUM_TASKS      = {"interf": 2}
 # ─────────────────────────────────────────────────────────────────────────────
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="TSFM downstream benchmark — IQ tasks.")
+    p = argparse.ArgumentParser(
+        description="TSFM downstream benchmark — IQ tasks.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    # config file (all keys map 1-to-1 to CLI flags; CLI flags override config)
+    p.add_argument("--config", default=None, metavar="YAML",
+                   help="Path to a YAML config file (e.g. tsfm-evalharness/configs/interf_lp.yaml). "
+                        "Any CLI flag provided alongside --config overrides the config value.")
     # data (identical flags to main_finetune.py)
-    p.add_argument("--task",             required=True, choices=IQ_TASKS)
-    p.add_argument("--train-data",       dest="train_path", required=True)
+    p.add_argument("--task",             default=None, choices=IQ_TASKS)
+    p.add_argument("--train-data",       dest="train_path", default=None)
     p.add_argument("--val-data",         dest="val_path",   default=None)
-    p.add_argument("--val-split",        type=float, default=0.2)
-    p.add_argument("--stratified-split", action="store_true")
-    p.add_argument("--seed",             type=int, default=42)
+    p.add_argument("--val-split",        type=float, default=None)
+    p.add_argument("--stratified-split", action="store_true", default=None)
+    p.add_argument("--seed",             type=int, default=None)
     # model
-    p.add_argument("--model",      required=True,
+    p.add_argument("--model",      default=None,
                    help="TSFM name — chronos2 / timesfm / patchtst / sundial / "
                         "timer_s1 / moirai2 / tirex / toto")
     p.add_argument("--checkpoint", default=None)
-    p.add_argument("--layer-idx",  type=int, default=-1)
+    p.add_argument("--layer-idx",  type=int, default=None)
     # mode
-    p.add_argument("--mode",       default="lp", choices=["lp", "ft2", "lora"],
+    p.add_argument("--mode",       default=None, choices=["lp", "ft2", "lora"],
                    help="lp=linear probe, ft2=partial fine-tune, lora=LoRA adapters")
-    p.add_argument("--lora-rank",  type=int, default=32)
-    p.add_argument("--lora-alpha", type=float, default=64.0)
+    p.add_argument("--lora-rank",    type=int,   default=None)
+    p.add_argument("--lora-alpha",   type=float, default=None)
+    p.add_argument("--lora-dropout", type=float, default=None)
     # training (defaults match wavesfm/run_finetune_all.py)
-    p.add_argument("--epochs",          type=int,   default=None,
+    p.add_argument("--epochs",         type=int,   default=None,
                    help="Override default epochs for the task.")
-    p.add_argument("--batch-size",      type=int,   default=None)
-    p.add_argument("--accum-steps",     type=int,   default=None)
-    p.add_argument("--blr",            type=float, default=1e-3,
+    p.add_argument("--batch-size",     type=int,   default=None)
+    p.add_argument("--accum-steps",    type=int,   default=None)
+    p.add_argument("--blr",            type=float, default=None,
                    help="Base LR; effective LR = blr * batch / 256.")
-    p.add_argument("--min-lr",         type=float, default=1e-6)
-    p.add_argument("--weight-decay",   type=float, default=0.05)
-    p.add_argument("--warmup-epochs",  type=float, default=5.0)
+    p.add_argument("--min-lr",         type=float, default=None)
+    p.add_argument("--weight-decay",   type=float, default=None)
+    p.add_argument("--warmup-epochs",  type=float, default=None)
     p.add_argument("--max-grad-norm",  type=float, default=None)
     p.add_argument("--smoothing",      type=float, default=None)
+    p.add_argument("--pool-avg",       action="store_true", default=None,
+                   help="Use mean-pool instead of last-token pooling (for causal models like Toto).")
     # IO
-    p.add_argument("--output-dir",  default="tsfm_runs")
+    p.add_argument("--output-dir",  default=None)
     p.add_argument("--save-every",  type=int, default=None)
-    p.add_argument("--num-workers", type=int, default=4)
-    p.add_argument("--device",      default="cuda")
-    return p.parse_args()
+    p.add_argument("--num-workers", type=int, default=None)
+    p.add_argument("--device",      default=None)
+
+    cli = p.parse_args()
+    return _apply_config(p, cli)
+
+
+# YAML key → argparse dest mapping (only entries that differ from the YAML key)
+_YAML_TO_DEST = {
+    "train_data":       "train_path",
+    "val_data":         "val_path",
+    "stratified_split": "stratified_split",
+}
+
+_DEFAULTS = {
+    "val_split": 0.2,
+    "seed": 42,
+    "layer_idx": -1,
+    "mode": "lp",
+    "lora_rank": 32,
+    "lora_alpha": 64.0,
+    "lora_dropout": 0.0,
+    "blr": 1e-3,
+    "min_lr": 1e-6,
+    "weight_decay": 0.05,
+    "warmup_epochs": 5.0,
+    "pool_avg": False,
+    "output_dir": "tsfm_runs",
+    "num_workers": 4,
+    "device": "cuda",
+}
+
+
+def _apply_config(parser: argparse.ArgumentParser, cli: argparse.Namespace) -> argparse.Namespace:
+    """Merge YAML config into cli, with CLI values taking precedence."""
+    if cli.config is None:
+        # No config — fill in hardcoded defaults for any None values
+        for dest, val in _DEFAULTS.items():
+            if getattr(cli, dest, None) is None:
+                setattr(cli, dest, val)
+        if not cli.task:
+            parser.error("--task is required (or provide --config with a task key)")
+        if not cli.train_path:
+            parser.error("--train-data is required (or provide --config with a train_data key)")
+        if not cli.model:
+            parser.error("--model is required (or provide --config with a model key)")
+        return cli
+
+    try:
+        import yaml
+    except ImportError:
+        raise ImportError("PyYAML is required for config files: pip install pyyaml")
+
+    cfg_path = Path(cli.config)
+    if not cfg_path.exists():
+        parser.error(f"Config file not found: {cfg_path}")
+
+    with cfg_path.open() as f:
+        cfg = yaml.safe_load(f) or {}
+
+    # Normalise cfg keys: replace hyphens with underscores
+    cfg = {k.replace("-", "_"): v for k, v in cfg.items()}
+
+    # For each config key, set on cli only if the CLI flag was not explicitly provided
+    # (i.e. is still None — we changed all defaults to None above).
+    explicitly_set = {
+        k for k, v in vars(cli).items()
+        if v is not None and k != "config"
+    }
+    # store_true flags default to None but user may have passed them
+    if cli.stratified_split:
+        explicitly_set.add("stratified_split")
+
+    for yaml_key, yaml_val in cfg.items():
+        dest = _YAML_TO_DEST.get(yaml_key, yaml_key)
+        if dest not in explicitly_set:
+            # null in YAML → None in Python; keep as None (will hit hardcoded default below)
+            setattr(cli, dest, yaml_val if yaml_val != "null" else None)
+
+    # Fill remaining Nones with hardcoded defaults
+    for dest, val in _DEFAULTS.items():
+        if getattr(cli, dest, None) is None:
+            setattr(cli, dest, val)
+
+    if not cli.task:
+        parser.error("task not specified in config or on CLI")
+    if not cli.train_path:
+        parser.error("train_data not specified in config or on CLI")
+    if not cli.model:
+        parser.error("model not specified in config or on CLI")
+
+    return cli
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -126,24 +225,32 @@ class TSFMProbeModel(nn.Module):
     WavesFM models expose, so WavesFM's engine.py functions work unchanged.
     """
 
-    def __init__(self, wrapper, embed_dim: int, num_classes: int):
+    def __init__(self, wrapper, embed_dim: int, num_classes: int,
+                 pool_avg: bool = False):
         super().__init__()
         self.wrapper   = wrapper
         self.head      = nn.Linear(embed_dim, num_classes)
         self._embed_dim = embed_dim
         self._layer_idx = -1   # set by caller if needed
+        self._pool_avg  = pool_avg
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: (B, 2, T) — IQ channels first, as returned by the datasets
-        x_tvn = x.float().permute(0, 2, 1)   # → (B, T, 2)
-        out   = self.wrapper.get_embeddings(x_tvn, layer_idx=self._layer_idx)
+        print(f"[TSFMProbeModel.forward] x.shape={x.shape}  dtype={x.dtype}")
+        xf = x.float()
+        if xf.dim() == 4:   # (B, 2, 1, T) → (B, 2, T)
+            xf = xf.squeeze(2)
+        x_tvn = xf.permute(0, 2, 1)   # → (B, T, 2)
+        out   = self.wrapper.get_embeddings(
+            x_tvn, layer_idx=self._layer_idx, pool_avg=self._pool_avg,
+        )
         # out.pooled is on the wrapper's device; head must be on the same device
         return self.head(out.pooled)
 
     # ── freeze / unfreeze helpers ──────────────────────────────────────────
 
     def freeze_encoder(self) -> None:
-        for p in self.wrapper.model.parameters():
+        for p in self.wrapper.nn_module.parameters():
             p.requires_grad = False
 
     def unfreeze_head(self) -> None:
@@ -158,7 +265,7 @@ class TSFMProbeModel(nn.Module):
         blocks = _get_encoder_blocks(self.wrapper)
         if not blocks:
             # Fallback: freeze first 50% of parameters by count
-            params = list(self.wrapper.model.parameters())
+            params = list(self.wrapper.nn_module.parameters())
             n_freeze = len(params) // 2
             for p in params[:n_freeze]:
                 p.requires_grad = False
@@ -175,7 +282,7 @@ class TSFMProbeModel(nn.Module):
                 p.requires_grad = True
         return n_freeze
 
-    def apply_lora(self, rank: int = 32, alpha: float = 64.0) -> None:
+    def apply_lora(self, rank: int = 32, alpha: float = 64.0, dropout: float = 0.0) -> None:
         """
         Inject LoRA adapters via peft.  Freezes the entire encoder first,
         then peft unfreezes only the LoRA A/B matrices.
@@ -188,15 +295,15 @@ class TSFMProbeModel(nn.Module):
         self.freeze_encoder()
 
         # Detect common attention Q/V projection names; fall back to all-linear
-        target = _detect_qv_modules(self.wrapper.model) or "all-linear"
+        target = _detect_qv_modules(self.wrapper.nn_module) or "all-linear"
         config = LoraConfig(
             r=rank,
             lora_alpha=alpha,
             target_modules=target,
-            lora_dropout=0.0,
+            lora_dropout=dropout,
             bias="none",
         )
-        lora_model = get_peft_model(self.wrapper.model, config)
+        lora_model = get_peft_model(self.wrapper.nn_module, config)
         self.wrapper._model = lora_model   # replace model inside wrapper
 
 
@@ -206,10 +313,10 @@ def _get_encoder_blocks(wrapper) -> List[nn.Module]:
     Checks both the pipeline wrapper (e.g. Chronos2Pipeline) and the
     inner model (e.g. Chronos2Model).
     """
-    candidates = [wrapper.model]
-    # Unwrap one level (e.g. Chronos2Pipeline → Chronos2Model)
-    if hasattr(wrapper.model, "model"):
-        candidates.append(wrapper.model.model)
+    candidates = [wrapper.nn_module]
+    # Also try the pipeline object itself in case it exposes block attributes directly
+    if wrapper.nn_module is not wrapper.model:
+        candidates.append(wrapper.model)
 
     search_paths = [
         "encoder.layers", "layers", "blocks",
@@ -259,10 +366,17 @@ def _detect_qv_modules(model: nn.Module) -> list[str] | None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @torch.no_grad()
-def probe_embed_dim(wrapper, sample: torch.Tensor) -> int:
+def probe_embed_dim(wrapper, sample: torch.Tensor,
+                    pool_avg: bool = False) -> int:
     """Run one sample through the wrapper and return the pooled feature size."""
-    x_tvn = sample.float().unsqueeze(0).permute(0, 2, 1)  # (1, T, 2)
-    out = wrapper.get_embeddings(x_tvn)
+    print(f"[probe_embed_dim] sample.shape={sample.shape}  dtype={sample.dtype}")
+    s = sample.float()
+    if s.dim() == 3:   # (2, 1, T) → (2, T)
+        s = s.squeeze(1)
+    x_tvn = s.unsqueeze(0).permute(0, 2, 1)  # (1, T, 2)
+    print(f"[probe_embed_dim] x_tvn.shape={x_tvn.shape}")
+    out = wrapper.get_embeddings(x_tvn, pool_avg=pool_avg)
+    print(f"[probe_embed_dim] out.pooled.shape={out.pooled.shape}")
     return int(out.pooled.shape[-1])
 
 
@@ -284,7 +398,7 @@ def train_and_evaluate(
 
     # Two param groups: encoder (smaller LR) + head (full LR).
     # For lp the encoder is fully frozen so encoder_params is empty.
-    encoder_params = [p for p in model.wrapper.model.parameters() if p.requires_grad]
+    encoder_params = [p for p in model.wrapper.nn_module.parameters() if p.requires_grad]
     head_params    = list(model.head.parameters())
 
     eff_batch = args.batch_size * args.accum_steps
@@ -412,11 +526,12 @@ def main() -> None:
     # Probe embed dim with one sample (no_grad — just a shape check)
     sample0, _ = train_ds[0]
     with torch.no_grad():
-        embed_dim = probe_embed_dim(wrapper, sample0)
-    print(f"[model] embed_dim={embed_dim}")
+        embed_dim = probe_embed_dim(wrapper, sample0, pool_avg=args.pool_avg)
+    print(f"[model] embed_dim={embed_dim}  pool_avg={args.pool_avg}")
 
     # ── build TSFMProbeModel ──────────────────────────────────────────────
-    probe = TSFMProbeModel(wrapper, embed_dim, task_info.num_outputs)
+    probe = TSFMProbeModel(wrapper, embed_dim, task_info.num_outputs,
+                           pool_avg=args.pool_avg)
     probe._layer_idx = args.layer_idx
 
     if args.mode == "lp":
@@ -432,7 +547,8 @@ def main() -> None:
               f"training rest + head")
 
     elif args.mode == "lora":
-        probe.apply_lora(rank=args.lora_rank, alpha=args.lora_alpha)
+        probe.apply_lora(rank=args.lora_rank, alpha=args.lora_alpha,
+                         dropout=args.lora_dropout)
         probe.unfreeze_head()
         trainable = sum(p.numel() for p in probe.parameters() if p.requires_grad)
         total     = sum(p.numel() for p in probe.parameters())

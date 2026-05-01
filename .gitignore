@@ -6,6 +6,7 @@ __pycache__/
 # C extensions
 *.so
 
+chronos-forecasting/
 # Distribution / packaging
 .Python
 build/
@@ -221,3 +222,5 @@ __marimo__/
 
 data/
 models/
+
+tsfm_runs/

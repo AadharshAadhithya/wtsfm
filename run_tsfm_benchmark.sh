@@ -10,17 +10,17 @@
 # the same defaults as wavesfm/run_finetune_all.py.
 #
 # Override via env, e.g.:
-#   DATA_ROOT=/mnt/data/preprocessed MODELS="chronos2 timesfm" \
+#   DATA_ROOT=/mnt/data/preprocessed OUTPUT_ROOT=tsfm_runs/benchmark_custom MODELS="chronos2 timesfm" \
 #   MODES="lp lora" SEEDS="0 1 2" bash run_tsfm_benchmark.sh
 # ============================================================================
 set -euo pipefail
 
 # ── configure ────────────────────────────────────────────────────────────────
-DATA_ROOT="${DATA_ROOT:-$(dirname "$0")/data/preprocessed}"
-OUTPUT_ROOT="${OUTPUT_ROOT:-tsfm_runs}"
+DATA_ROOT="${DATA_ROOT:-/home/aa99435/repos/wtsfm/data/preprocessed}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-tsfm_runs/benchmark_preprocessed}"
 
-MODELS="${MODELS:-chronos2 timesfm patchtst sundial timer_s1 moirai2 tirex toto}"
-SEEDS="${SEEDS:-0 1 2}"
+MODELS="${MODELS:-chronos2 timesfm patchtst sundial timer_s1 moirai2 toto tirex}"
+SEEDS="${SEEDS:-0}"
 MODES="${MODES:-lp ft2 lora}"
 TASKS="${TASKS:-radcom rml rfp interf}"
 
@@ -30,6 +30,7 @@ LORA_RANK="${LORA_RANK:-32}"
 LORA_ALPHA="${LORA_ALPHA:-64}"
 
 SCRIPT="$(cd "$(dirname "$0")" && pwd)/run_tsfm_probe.py"
+mkdir -p "$OUTPUT_ROOT"
 
 # ── per-task h5 paths (matches wavesfm/run_finetune_all.py naming) ────────────
 declare -A TASK_H5=(
@@ -41,6 +42,9 @@ declare -A TASK_H5=(
 
 # ── sweep ────────────────────────────────────────────────────────────────────
 TOTAL=0; DONE=0; SKIPPED=0
+ERRORS=0
+ERROR_LOG="${OUTPUT_ROOT}/eerrors.txt"
+touch "$ERROR_LOG"
 
 for MODEL in $MODELS; do
     for MODE in $MODES; do
@@ -87,14 +91,25 @@ for MODEL in $MODELS; do
                 echo "[run] model=$MODEL  mode=$MODE  task=$TASK  seed=$SEED"
                 echo "  ${CMD[*]}"
                 mkdir -p "$OUT_DIR"
-                "${CMD[@]}" 2>&1 | tee "${OUT_DIR}/train.log"
-                DONE=$((DONE + 1))
-                echo "[done] model=$MODEL  mode=$MODE  task=$TASK  seed=$SEED"
+                if "${CMD[@]}" 2>&1 | tee "${OUT_DIR}/train.log"; then
+                    DONE=$((DONE + 1))
+                    echo "[done] model=$MODEL  mode=$MODE  task=$TASK  seed=$SEED"
+                else
+                    ERRORS=$((ERRORS + 1))
+                    echo "[error] model=$MODEL  mode=$MODE  task=$TASK  seed=$SEED (continuing)"
+                    {
+                        echo "[$(date '+%Y-%m-%d %H:%M:%S')] model=$MODEL mode=$MODE task=$TASK seed=$SEED"
+                        echo "  cmd: ${CMD[*]}"
+                        echo "  log: ${OUT_DIR}/train.log"
+                        echo
+                    } >> "$ERROR_LOG"
+                fi
             done
         done
     done
 done
 
 echo "════════════════════════════════════════════════════════════"
-echo "[done] total=$TOTAL  ran=$DONE  skipped=$SKIPPED"
+echo "[done] total=$TOTAL  ran=$DONE  skipped=$SKIPPED  errors=$ERRORS"
+echo "Error log: $ERROR_LOG"
 echo "Results in: $OUTPUT_ROOT"

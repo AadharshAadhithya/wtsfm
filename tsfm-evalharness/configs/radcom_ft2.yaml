@@ -1,0 +1,26 @@
+# RadCom emitter identification — partial fine-tune
+task: radcom
+mode: ft2
+model: timesfm
+checkpoint: null
+
+train_data: /ssd1/aa99435/data/wireless-tsfm/preprocessed/radcom.h5
+val_data: null
+val_split: 0.2
+seed: 0
+
+layer_idx: -1
+
+epochs: 50
+batch_size: 2048
+accum_steps: 1
+blr: 1.0e-4
+min_lr: 1.0e-7
+weight_decay: 0.05
+warmup_epochs: 10.0
+max_grad_norm: 1.0
+smoothing: 0.0
+
+output_dir: tsfm_runs
+num_workers: 4
+device: cuda

@@ -10,7 +10,7 @@ from .base import TSFMWrapper
 _REGISTRY: Dict[str, Tuple[str, str]] = {
     # key: (wrapper_module_path, default_checkpoint)
     "patchtst":  ("harness.models.patchtst",  "namctin/patchtst_etth1_pretrain"),
-    "chronos2":  ("harness.models.chronos",   "amazon/chronos-bolt-small"),
+    "chronos2":  ("harness.models.chronos",   "amazon/chronos-2"),
     "timesfm":   ("harness.models.timesfm",   "google/timesfm-2.0-500m-pytorch"),
     "timesfm25": ("harness.models.timesfm",   "google/timesfm-2.0-500m-pytorch"),
     "sundial":   ("harness.models.sundial",   "thuml/sundial-base-128m"),
@@ -89,7 +89,17 @@ class ModelRegistry:
         cls_name = _CLASS_MAP[module_path]
 
         import importlib
-        module = importlib.import_module(module_path)
+        try:
+            module = importlib.import_module(module_path)
+        except ModuleNotFoundError as exc:
+            if exc.name and exc.name.startswith("harness.models"):
+                raise ModuleNotFoundError(
+                    "Could not import TSFM wrapper modules (missing 'harness.models'). "
+                    "Your local 'tsfm-evalharness' checkout appears incomplete. "
+                    "Ensure 'tsfm-evalharness/harness/models/' exists and reinstall with "
+                    "'pip install -e tsfm-evalharness/'."
+                ) from exc
+            raise
         cls: Type[TSFMWrapper] = getattr(module, cls_name)
 
         ckpt = checkpoint or default_ckpt
